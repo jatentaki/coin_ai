@@ -60,6 +60,11 @@ class AttentionReadoutLayer(nn.Module):
         self.mlp_norm = nn.LayerNorm(dino_dim, elementwise_affine=False)
         self.mlp = MLP(dino_dim)
 
+        with torch.no_grad():
+            self.mlp[-1].weight *= 0.1
+            self.mha.out_proj.weight *= 0.1
+
+
     def forward(self, patches: Tensor, query: Tensor) -> Tensor:
         query = (
             query

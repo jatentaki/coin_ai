@@ -197,7 +197,7 @@ class InMemoryCoinDataset:
         for type_index, image_index in index_generator.iterate(rng_seed, n_batches):
             images = slab.get(type_index, image_index)
             images = self.augmentation(images)
-            yield images, type_index
+            yield images, type_index.to(images.device)
 
 
 class FlipAdapter:

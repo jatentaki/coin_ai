@@ -71,6 +71,11 @@ class InMemoryCoins:
         self.images = torch.stack(images).to(device)
 
         assert self.images.shape[0] == self.type_sizes.sum().item()
+    
+    def to_device(self, device: torch.device):
+        self.images = self.images.to(device)
+        self.device = device
+        return self
 
     def __len__(self):
         return self.images.shape[0]
@@ -107,7 +112,6 @@ class CoinIndexGenerator:
         coin_types: list[CoinType],
         batch_size: int,
         max_in_class: int = 16,
-        device: torch.device = torch.device("cpu"),
     ):
         super().__init__()
         self.coin_types = coin_types
@@ -116,7 +120,6 @@ class CoinIndexGenerator:
         self.type_sizes = torch.tensor(
             [len(coin_type) for coin_type in coin_types], dtype=torch.int64
         )
-        self.device = device
 
     def iterate(self, rng_seed: int = 42, n_batches: int = 1_000):
         rng = Generator(rng_seed)
@@ -124,7 +127,6 @@ class CoinIndexGenerator:
         for _ in range(n_batches):
             types, counts = self._sample_types_and_counts(rng)
             type_indices, image_indices = self._sample_image_indices(types, counts, rng)
-            print(rng.get_state())
             yield type_indices, image_indices
 
     def _sample_types_and_counts(self, rng: Generator) -> tuple[Tensor, Tensor]:
@@ -165,28 +167,28 @@ class InMemoryCoinDataset:
         batch_size: int,
         max_in_class: int = 4,
         augmentation: Callable[[Tensor], Tensor] = identity,
-        device: torch.device = torch.device("cpu"),
     ):
         super().__init__()
         self.coin_types = coin_types
-        self.in_memory_slab = InMemoryCoins(coin_types, device=device)
+        self.in_memory_slab = InMemoryCoins(coin_types)
         self.max_in_class = max_in_class
         self.batch_size = batch_size
         self.augmentation = augmentation
-        self.device = device
 
     def n_types(self):
         return len(self.coin_types)
 
-    def iterate(self, rng_seed: int = 42, n_batches: int = 1_000):
+    def iterate(self, rng_seed: int = 42, n_batches: int = 1_000, device: torch.device = torch.device("cpu")):
         index_generator = CoinIndexGenerator(
             self.coin_types,
             self.batch_size,
             max_in_class=self.max_in_class,
-            device=self.device,
         )
+
+        slab = self.in_memory_slab.to_device(device)
+
         for type_index, image_index in index_generator.iterate(rng_seed, n_batches):
-            images = self.in_memory_slab.get(type_index, image_index)
+            images = slab.get(type_index, image_index)
             images = self.augmentation(images)
             yield images, type_index
 
@@ -201,31 +203,25 @@ class FlipAdapter:
     def n_types(self):
         return 2 * self.coin_dataset.n_types()
 
-    def iterate(self, rng_seed: int = 42, n_batches: int = 1_000):
+    def iterate(self, rng_seed: int = 42, n_batches: int = 1_000, device: torch.device = torch.device("cpu")):
         index_generator = CoinIndexGenerator(
             self.coin_dataset.coin_types,
             self.coin_dataset.batch_size // 2,
             max_in_class=self.coin_dataset.max_in_class,
-            device=self.coin_dataset.device,
         )
+
+        slab = self.coin_dataset.in_memory_slab.to_device(device)
 
         rng = Generator(rng_seed)
 
         for _ in range(n_batches):
             types, counts = index_generator._sample_types_and_counts(rng)
 
-            print(rng.get_state())
             base_indices, base_image_indices = index_generator._sample_image_indices(types, counts, rng)
-            print(rng.get_state())
             flip_indices, flip_image_indices = index_generator._sample_image_indices(types, counts, rng)
-            print(rng.get_state())
 
-            print(types, counts)
-            print(base_indices, base_image_indices)
-            print(flip_indices, flip_image_indices)
-
-            base_images = self.coin_dataset.in_memory_slab.get(base_indices, base_image_indices)
-            flip_images = self.coin_dataset.in_memory_slab.get(flip_indices, flip_image_indices)
+            base_images = slab.get(base_indices, base_image_indices)
+            flip_images = slab.get(flip_indices, flip_image_indices)
 
             flip_images = torch.flip(flip_images, (-1, ))
             flip_indices += self.coin_dataset.n_types()

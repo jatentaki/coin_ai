@@ -137,6 +137,7 @@ class CoinDataset(IterableDataset):
         min_in_class: int = 4,
         n_batches: int = 1_000,
         augmentation: Callable[[Tensor], Tensor] = identity,
+        seed_init: int = 42,
     ):
         super().__init__()
         self.coin_types = coin_types
@@ -148,6 +149,7 @@ class CoinDataset(IterableDataset):
         )
         self.cum_type_sizes = self.type_sizes.cumsum(0)
         self.augmentation = augmentation
+        self.seed_init = seed_init
 
         assert (
             self.batch_size >= self.min_in_class
@@ -166,11 +168,11 @@ class CoinDataset(IterableDataset):
         worker_info = get_worker_info()
         rng = torch.Generator()
         if worker_info is not None:
-            rng.manual_seed(worker_info.id)
+            rng.manual_seed(worker_info.id + self.seed_init)
             worker_id = worker_info.id
             num_workers = worker_info.num_workers
         else:
-            rng.manual_seed(0)
+            rng.manual_seed(self.seed_init)
             worker_id = 0
             num_workers = 1
 

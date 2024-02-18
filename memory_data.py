@@ -230,7 +230,7 @@ class FlipAdapter:
             type_index = torch.cat([base_indices, flip_indices])
 
             images = self.coin_dataset.augmentation(images)
-            yield images, type_index
+            yield images, type_index.to(images.device)
 
 train_augmentation = augmentation.container.AugmentationSequential(
     transforms.ToDtype(torch.float32, scale=True),

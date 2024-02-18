@@ -157,7 +157,7 @@ class CoinDataset(IterableDataset):
 
     def length(self):
         return self.type_sizes.sum().item()
-    
+
     def get_nth_item(self, n: int) -> tuple[Tensor, int]:
         type_index = torch.searchsorted(self.cum_type_sizes, n, right=True)
         coin_index = n - self.cum_type_sizes[type_index]

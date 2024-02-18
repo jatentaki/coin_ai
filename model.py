@@ -64,7 +64,6 @@ class AttentionReadoutLayer(nn.Module):
             self.mlp[-1].weight *= 0.1
             self.mha.out_proj.weight *= 0.1
 
-
     def forward(self, patches: Tensor, query: Tensor) -> Tensor:
         query = (
             query

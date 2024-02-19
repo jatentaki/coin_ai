@@ -51,7 +51,7 @@ def build_coin_types(root: str) -> list[CoinType]:
     return coin_types
 
 
-class InMemoryCoins:
+class MemorySlab:
     def __init__(self, coin_types: list[CoinType], device=torch.device("cpu")):
         self.coin_types = coin_types
         self.type_sizes = torch.tensor(
@@ -168,13 +168,20 @@ class InMemoryCoinDataset:
         batch_size: int,
         max_in_class: int = 4,
         augmentation: Callable[[Tensor], Tensor] = identity,
+        memory_slab: MemorySlab | None = None,
     ):
         super().__init__()
         self.coin_types = coin_types
-        self.in_memory_slab = InMemoryCoins(coin_types)
         self.max_in_class = max_in_class
         self.batch_size = batch_size
         self.augmentation = augmentation
+
+        if memory_slab is not None:
+            self.memory_slab = memory_slab
+        else:
+            self.memory_slab = MemorySlab(coin_types)
+
+        assert len(self.memory_slab) == sum(len(coin_type) for coin_type in coin_types)
 
     def n_types(self):
         return len(self.coin_types)
@@ -191,7 +198,7 @@ class InMemoryCoinDataset:
             max_in_class=self.max_in_class,
         )
 
-        slab = self.in_memory_slab.to_device(device)
+        slab = self.memory_slab.to_device(device)
 
         for type_index, image_index in index_generator.iterate(rng_seed, n_batches):
             images = slab.get(type_index, image_index)
@@ -221,7 +228,7 @@ class FlipAdapter:
             max_in_class=self.coin_dataset.max_in_class,
         )
 
-        slab = self.coin_dataset.in_memory_slab.to_device(device)
+        slab = self.coin_dataset.memory_slab.to_device(device)
 
         rng = Generator(rng_seed)
 

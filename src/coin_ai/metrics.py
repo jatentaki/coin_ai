@@ -3,6 +3,7 @@ from typing import Callable
 import torch
 from torch import nn, Tensor
 
+
 class AccuracyMetric(nn.Module):
     def __init__(self, similarity: Callable[[Tensor], Tensor]):
         super().__init__()
@@ -27,4 +28,4 @@ class AccuracyMetric(nn.Module):
 
         accuracy_at_k = is_correct_up_to_k.float().mean(dim=0).cpu()
 
-        return {f'acc_at_{k+1}': accuracy_at_k[k].item() for k in range(10)}
+        return {f"acc_at_{k+1}": accuracy_at_k[k].item() for k in range(10)}

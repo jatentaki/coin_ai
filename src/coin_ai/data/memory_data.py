@@ -247,6 +247,7 @@ class FlipAdapter:
             images = self.coin_dataset.augmentation(images)
             yield images, type_index.to(images.device)
 
+
 @dataclass
 class DataloaderAdapter:
     dataset: InMemoryCoinDataset
@@ -254,11 +255,11 @@ class DataloaderAdapter:
     device: torch.device
     n_batches: int
     reseed: bool = True
-    
+
     def __iter__(self):
         if self.reseed:
             self.init_seed += 1
         return self.dataset.iterate(self.init_seed, self.n_batches, self.device)
-    
+
     def __len__(self):
         return self.n_batches

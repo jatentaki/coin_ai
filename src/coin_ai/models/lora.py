@@ -18,7 +18,7 @@ def swap_linear_for_lora(
     module: nn.Module, r: int, lora_alpha: float = 1.0, skip_mlp: bool = False
 ) -> nn.Module:
     for name, child in module.named_children():
-        if skip_mlp and 'mlp' in name:
+        if skip_mlp and "mlp" in name:
             continue
 
         if isinstance(child, nn.Linear):
@@ -53,9 +53,9 @@ class LoraDino(nn.Module):
         lora.mark_only_lora_as_trainable(self)
         self.head = nn.Linear(dino_out_dim, out_dim)
         self.skip_mlp_lora = skip_mlp
-    
+
     def extra_repr(self) -> str:
-        return f'skip_mlp_lora={self.skip_mlp_lora}'
+        return f"skip_mlp_lora={self.skip_mlp_lora}"
 
     def n_trainable(self) -> int:
         return sum(p.numel() for p in self.parameters() if p.requires_grad)

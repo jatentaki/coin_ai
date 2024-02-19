@@ -1,6 +1,7 @@
 import torch
 from torch import nn, Tensor
 
+
 class SigmoidLoss(nn.Module):
     def forward(self, embeddings: Tensor, labels: Tensor) -> Tensor:
         similarity = torch.einsum("ic,jc->ij", embeddings, embeddings)
@@ -47,8 +48,16 @@ class MarginLoss(nn.Module):
             gt_similarity.size(0), dtype=bool, device=gt_similarity.device
         )
 
-        positive = torch.where(positive_mask, similarity, torch.full_like(similarity, fill_value=float("-inf"))).amin(dim=-1)
-        negative = torch.where(negative_mask, similarity, torch.full_like(similarity, fill_value=float("-inf"))).amin(dim=-1)
+        positive = torch.where(
+            positive_mask,
+            similarity,
+            torch.full_like(similarity, fill_value=float("-inf")),
+        ).amin(dim=-1)
+        negative = torch.where(
+            negative_mask,
+            similarity,
+            torch.full_like(similarity, fill_value=float("-inf")),
+        ).amin(dim=-1)
 
         return torch.relu(negative - positive + 0.5).mean()
 

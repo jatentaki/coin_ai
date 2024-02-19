@@ -8,7 +8,7 @@ class AccuracyMetric(nn.Module):
         super().__init__()
         self.similarity = similarity
 
-    def forward(self, embeddings: Tensor, labels: Tensor) -> Tensor:
+    def forward(self, embeddings: Tensor, labels: Tensor) -> dict[str, Tensor]:
         similarity = self.similarity(embeddings)
         pad_values = torch.full(
             (similarity.size(0),),
@@ -25,4 +25,6 @@ class AccuracyMetric(nn.Module):
         ]
         is_correct_up_to_k = is_correct_at_k.cumsum(dim=1).bool()
 
-        return is_correct_up_to_k.float().mean(dim=0)
+        accuracy_at_k = is_correct_up_to_k.float().mean(dim=0).cpu()
+
+        return {f'acc_at_{k+1}': accuracy_at_k[k].item() for k in range(10)}

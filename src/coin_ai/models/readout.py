@@ -16,15 +16,12 @@ class AttentionReadout(nn.Module):
 
         c = head_dim * n_head
         self.n_head = n_head
-        self.query = nn.Parameter(torch.randn(n_head, head_dim) * 0.1)
-        self.cls_modulation = nn.Parameter(torch.ones(1, n_head, 1, head_dim))
+        self.query = nn.Parameter(torch.randn(n_head, head_dim))
         self.key = nn.Linear(dino_dim, c, bias=False)
         self.value = nn.Linear(dino_dim, c, bias=False)
         self.proj = nn.Linear(c, out_dim)
 
     def forward(self, dino_output: dict[str, Tensor]) -> Tensor:
-        cls = dino_output["x_norm_clstoken"]
-        cls = rearrange(cls, "b (h c) -> b h 1 c", h=self.n_head) * self.cls_modulation
         tokens = dino_output["x_norm_patchtokens"]
 
         h = self.n_head
@@ -32,7 +29,6 @@ class AttentionReadout(nn.Module):
         keys = rearrange(self.key(tokens), "b n (h c) -> b h n c", h=h)
         values = rearrange(self.value(tokens), "b n (h c) -> b h n c", h=h)
         query = repeat(self.query, "h c -> b h 1 c", b=keys.shape[0])
-        query = query + cls
         attn = nn.functional.scaled_dot_product_attention(
             query,
             keys,

@@ -41,23 +41,22 @@ class MarginLoss(nn.Module):
         similarity = self.similarity(embeddings)
         gt_similarity = labels.unsqueeze(0) == labels.unsqueeze(1)
 
-        positive_mask = gt_similarity & ~torch.eye(
-            gt_similarity.size(0), dtype=bool, device=gt_similarity.device
-        )
-        negative_mask = ~gt_similarity & ~torch.eye(
-            gt_similarity.size(0), dtype=bool, device=gt_similarity.device
-        )
+        is_valid_positive = gt_similarity.clone()
+        is_valid_positive.fill_diagonal_(0)
+        is_valid_negative = (~gt_similarity).clone()
+        is_valid_negative.fill_diagonal_(0)
 
+        # FIXME: handle the case with no valid positives better than just placeholder -1
         positive = torch.where(
-            positive_mask,
+            is_valid_positive,
             similarity,
-            torch.full_like(similarity, fill_value=float("-inf")),
-        ).amin(dim=-1)
+            torch.full_like(similarity, fill_value=-1),
+        ).amax(dim=-1)
         negative = torch.where(
-            negative_mask,
+            is_valid_negative,
             similarity,
-            torch.full_like(similarity, fill_value=float("-inf")),
-        ).amin(dim=-1)
+            torch.full_like(similarity, fill_value=-1),
+        ).amax(dim=-1)
 
         return torch.relu(negative - positive + 0.5).mean()
 

@@ -6,6 +6,7 @@ import torch
 import numpy as np
 from torchvision import io
 from torch import Tensor
+from tqdm.auto import tqdm
 
 
 def identity(x: Tensor) -> Tensor:
@@ -30,7 +31,7 @@ class CoinType:
     def __repr__(self):
         return f"{self.path}, ({len(self.images)} images)"
 
-    def get_item(
+    def __getitem__(
         self,
         idx: int,
     ) -> Tensor:
@@ -63,9 +64,8 @@ class InMemoryCoins:
         self.device = device
 
         images = []
-        for coin_type in coin_types:
-            for i in range(len(coin_type)):
-                images.append(coin_type.get_item(i))
+        for coin_type in tqdm(coin_types):
+            images.extend(coin_type)
 
         self.images = torch.stack(images).to(device)
 

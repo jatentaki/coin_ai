@@ -41,14 +41,12 @@ class CoinType:
 
 
 def build_coin_types(root: str) -> list[CoinType]:
-    coin_types = []
+    dirs = []
     for dir, _, files in os.walk(root):
-        if not any(is_image_path(f) for f in files):
-            continue
+        if any(is_image_path(f) for f in files):
+            dirs.append(dir)
 
-        coin_types.append(CoinType(dir))
-
-    return coin_types
+    return [CoinType(d) for d in sorted(dirs)]  # sort for reproducibility
 
 
 class MemorySlab:
@@ -181,7 +179,14 @@ class InMemoryCoinDataset:
         else:
             self.memory_slab = MemorySlab(coin_types)
 
-        assert len(self.memory_slab) == sum(len(coin_type) for coin_type in coin_types)
+        if len(self.memory_slab) != sum(len(coin_type) for coin_type in coin_types):
+            raise AssertionError("memory_slab doesn't match coin_types")
+        if len(self.memory_slab) < sum(
+            max(max_in_class, len(coin_type)) for coin_type in coin_types
+        ):
+            raise AssertionError(
+                f"memory_slab too small ({len(self.memory_slab)}) for {max_in_class=}"
+            )
 
     def n_types(self):
         return len(self.coin_types)

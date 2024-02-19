@@ -21,4 +21,5 @@ dependencies = [
     "matplotlib",
     "numpy",
     "kornia",
+    "lightning",
 ]

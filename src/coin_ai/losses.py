@@ -47,8 +47,8 @@ class MarginLoss(nn.Module):
             gt_similarity.size(0), dtype=bool, device=gt_similarity.device
         )
 
-        positive = torch.where(positive_mask, similarity, torch.zeros_like(similarity))
-        negative = torch.where(negative_mask, similarity, torch.zeros_like(similarity))
+        positive = torch.where(positive_mask, similarity, torch.full_like(similarity, fill_value=float("-inf"))).amin(dim=-1)
+        negative = torch.where(negative_mask, similarity, torch.full_like(similarity, fill_value=float("-inf"))).amin(dim=-1)
 
         return torch.relu(negative - positive + 0.5).mean()
 

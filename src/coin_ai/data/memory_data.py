@@ -1,10 +1,9 @@
 import os
 from typing import Callable
+from dataclasses import dataclass
 
 import torch
 import numpy as np
-from kornia import augmentation
-from torchvision.transforms import v2 as transforms
 from torchvision import io
 from torch import Tensor
 
@@ -248,18 +247,18 @@ class FlipAdapter:
             images = self.coin_dataset.augmentation(images)
             yield images, type_index.to(images.device)
 
-
-train_augmentation = augmentation.container.AugmentationSequential(
-    transforms.ToDtype(torch.float32, scale=True),
-    augmentation.RandomRotation(360, p=1.0),
-    augmentation.RandomPerspective(distortion_scale=0.25),
-    augmentation.RandomResizedCrop((224, 224), same_on_batch=False, scale=(0.75, 1.0)),
-    augmentation.ColorJiggle(0.2, 0.2, 0.2),
-    augmentation.RandomGrayscale(p=1.0),
-)
-
-val_augmentation = augmentation.container.AugmentationSequential(
-    transforms.ToDtype(torch.float32, scale=True),
-    augmentation.Resize((224, 224)),
-    augmentation.RandomGrayscale(p=1.0),
-)
+@dataclass
+class DataloaderAdapter:
+    dataset: InMemoryCoinDataset
+    init_seed: int
+    device: torch.device
+    n_batches: int
+    reseed: bool = True
+    
+    def __iter__(self):
+        if self.reseed:
+            self.init_seed += 1
+        return self.dataset.iterate(self.init_seed, self.n_batches, self.device)
+    
+    def __len__(self):
+        return self.n_batches

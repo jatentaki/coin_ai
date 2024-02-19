@@ -19,12 +19,12 @@ class LightningLearner(pl.LightningModule):
         self.log('train/loss', loss)
         return loss
 
-    def validation_step(self, batch, batch_idx):
+    def validation_step(self, batch, batch_idx, dataloader_idx=0):
         images, labels = batch
         embeddings = self(images)
         metrics = self.metric_fn(embeddings, labels)
         for k, v in metrics.items():
-            self.log(f'val/{k}', v)
+            self.log(f'val/loader_{dataloader_idx}/{k}', v)
 
     def configure_optimizers(self):
         decay_params = [p for n, p in self.model.named_parameters() if 'weight' in n and p.requires_grad]

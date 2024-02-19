@@ -182,7 +182,7 @@ class InMemoryCoinDataset:
         if len(self.memory_slab) != sum(len(coin_type) for coin_type in coin_types):
             raise AssertionError("memory_slab doesn't match coin_types")
         if len(self.memory_slab) < sum(
-            max(max_in_class, len(coin_type)) for coin_type in coin_types
+            min(max_in_class, len(coin_type)) for coin_type in coin_types
         ):
             raise AssertionError(
                 f"memory_slab too small ({len(self.memory_slab)}) for {max_in_class=}"

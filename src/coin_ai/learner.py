@@ -25,7 +25,7 @@ class LightningLearner(pl.LightningModule):
         embeddings = self(images)
         metrics = self.metric_fn(embeddings, labels)
         for k, v in metrics.items():
-            self.log(f"val/loader_{dataloader_idx}/{k}", v)
+            self.log(f"val/{k}", v)
 
     def configure_optimizers(self):
         decay_params = [

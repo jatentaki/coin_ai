@@ -3,4 +3,5 @@ __pycache__
 *.pt
 *.pth
 *.egg-info
+checkpoints
 

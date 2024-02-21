@@ -67,11 +67,21 @@ class MarginLoss(nn.Module):
 
         return torch.relu(negative - positive + 0.5).mean()
 
-    def similarity(self, embeddings: Tensor) -> Tensor:
+    def similarity(
+        self, embeddings: Tensor, other_embeddings: Tensor | None = None
+    ) -> Tensor:
         embeddings = nn.functional.normalize(embeddings, dim=-1, p=2)
-        return torch.einsum("ic,jc->ij", embeddings, embeddings)
+        if other_embeddings is None:
+            other_embeddings = embeddings
+        else:
+            other_embeddings = nn.functional.normalize(other_embeddings, dim=-1, p=2)
+        return torch.einsum("ic,jc->ij", embeddings, other_embeddings)
 
 
 class CDistMarginLoss(MarginLoss):
-    def similarity(self, embeddings: Tensor) -> Tensor:
-        return -torch.cdist(embeddings, embeddings, p=2)
+    def similarity(
+        self, embeddings: Tensor, other_embeddings: Tensor | None = None
+    ) -> Tensor:
+        if other_embeddings is None:
+            other_embeddings = embeddings
+        return -torch.cdist(embeddings, other_embeddings, p=2)

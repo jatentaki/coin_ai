@@ -1,5 +1,6 @@
 import torch
 from torch import nn, Tensor
+import torch.nn.functional as F
 
 
 class SigmoidLoss(nn.Module):
@@ -11,7 +12,7 @@ class SigmoidLoss(nn.Module):
             gt_similarity.size(0), dtype=torch.float, device=gt_similarity.device
         )
 
-        return nn.functional.binary_cross_entropy_with_logits(
+        return F.binary_cross_entropy_with_logits(
             similarity, gt_similarity.float(), weight=weight, reduction="mean"
         )
 
@@ -32,7 +33,7 @@ class DotProductLoss(nn.Module):
         return (weight * similarity).mean()
 
     def similarity(self, embeddings: Tensor) -> Tensor:
-        embeddings = nn.functional.normalize(embeddings, dim=-1, p=2)
+        embeddings = F.normalize(embeddings, dim=-1, p=2)
         return torch.einsum("ic,jc->ij", embeddings, embeddings)
 
 
@@ -70,11 +71,11 @@ class MarginLoss(nn.Module):
     def similarity(
         self, embeddings: Tensor, other_embeddings: Tensor | None = None
     ) -> Tensor:
-        embeddings = nn.functional.normalize(embeddings, dim=-1, p=2)
+        embeddings = F.normalize(embeddings, dim=-1, p=2)
         if other_embeddings is None:
             other_embeddings = embeddings
         else:
-            other_embeddings = nn.functional.normalize(other_embeddings, dim=-1, p=2)
+            other_embeddings = F.normalize(other_embeddings, dim=-1, p=2)
         return torch.einsum("ic,jc->ij", embeddings, other_embeddings)
 
 
@@ -85,3 +86,32 @@ class CDistMarginLoss(MarginLoss):
         if other_embeddings is None:
             other_embeddings = embeddings
         return -torch.cdist(embeddings, other_embeddings, p=2)
+
+
+class CosineEmbeddingLoss(nn.Module):
+    def __init__(self, margin: float = 0.5):
+        super().__init__()
+        self.margin = margin
+
+    def forward(self, embeddings: Tensor, labels: Tensor) -> Tensor:
+        similarity = self.similarity(embeddings)
+        gt_similarity = labels.unsqueeze(0) == labels.unsqueeze(1)
+
+        positive_mask = gt_similarity.to(similarity.dtype)
+        positive_mask.fill_diagonal_(0)
+        negative_mask = (~gt_similarity).to(similarity.dtype)
+        negative_mask.fill_diagonal_(0)
+
+        positive_term = 1 - similarity
+        negative_term = F.relu(similarity - self.margin)
+
+        return (positive_term * positive_mask + negative_term * negative_mask).mean()
+
+    def similarity(
+        self, embeddings: Tensor, other_embeddings: Tensor | None = None
+    ) -> Tensor:
+        if other_embeddings is None:
+            other_embeddings = embeddings
+        return F.cosine_similarity(
+            embeddings.unsqueeze(1), other_embeddings.unsqueeze(0), dim=-1
+        )

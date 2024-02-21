@@ -3,6 +3,24 @@ from torch import nn, Tensor
 from einops import rearrange, repeat
 
 
+def make_whitening_linear(embs: Tensor, out_dim: int | None = None) -> nn.Linear:
+    if out_dim is None:
+        out_dim = embs.shape[-1]
+
+    linear = nn.Linear(embs.shape[-1], out_dim, bias=True)
+    with torch.no_grad():
+        embs_demean = embs - embs.mean(dim=0)
+        _u, s, vT = torch.linalg.svd(embs_demean, full_matrices=False)
+        weight = vT[:out_dim]
+        # unclear why we don't need to multiply by the inverse of the square root of s
+        # weight = (vT[:out_dim].T @ torch.diag(1 / s[:out_dim].sqrt())).T
+        bias = torch.nn.functional.linear(embs, weight, bias=None).mean(dim=0)
+        linear.weight = nn.Parameter(weight)
+        linear.bias = nn.Parameter(-bias)
+
+    return linear
+
+
 class AttentionReadout(nn.Module):
     def __init__(
         self,
@@ -29,6 +47,7 @@ class AttentionReadout(nn.Module):
         keys = rearrange(self.key(tokens), "b n (h c) -> b h n c", h=h)
         values = rearrange(self.value(tokens), "b n (h c) -> b h n c", h=h)
         query = repeat(self.query, "h c -> b h 1 c", b=keys.shape[0])
+
         attn = nn.functional.scaled_dot_product_attention(
             query,
             keys,
@@ -133,3 +152,27 @@ class DinoWithHead(nn.Module):
         with torch.no_grad():
             dino_output = self.dino.forward_features(x)
         return self.head(dino_output)
+
+
+class WhiteningWrapper(nn.Module):
+    def __init__(
+        self, inner_head: nn.Module, dino_dim: int = 384, learnable: bool = False
+    ):
+        super().__init__()
+        self.inner_head = inner_head
+        self.whitening = None
+        self.learnable = learnable
+        self.dino_dim = dino_dim
+
+    def forward(self, dino_output: dict[str, Tensor]) -> Tensor:
+        patches = dino_output["x_norm_patchtokens"]
+        if self.whitening is None:
+            print(f"CREATING WHITENING (learnable = {self.learnable})")
+            self.whitening = make_whitening_linear(
+                patches.flatten(0, -2), self.dino_dim
+            )
+            if not self.learnable:
+                self.whitening.requires_grad_(False)
+        whitened_patches = self.whitening(patches)
+        dino_output["x_norm_patchtokens"] = whitened_patches
+        return self.inner_head(dino_output)

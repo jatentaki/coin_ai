@@ -29,3 +29,19 @@ class AccuracyMetric(nn.Module):
         accuracy_at_k = is_correct_up_to_k.float().mean(dim=0).cpu()
 
         return {f"acc_at_{k+1}": accuracy_at_k[k].item() for k in range(10)}
+
+
+class SimilarityStatistics(nn.Module):
+    def __init__(self, similarity: Callable[[Tensor], Tensor]):
+        super().__init__()
+        self.similarity = similarity
+
+    def forward(self, embeddings: Tensor, labels: Tensor) -> dict[str, Tensor]:
+        with torch.no_grad():
+            similarity = self.similarity(embeddings)
+
+        mean = similarity.mean()
+        std = similarity.std()
+        min = similarity.min()
+
+        return {"similarity_mean": mean, "similarity_std": std, "similarity_min": min}

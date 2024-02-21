@@ -4,11 +4,18 @@ from torch import nn, Tensor
 
 
 class LightningLearner(pl.LightningModule):
-    def __init__(self, model: nn.Module, loss_fn: nn.Module, metric_fn: nn.Module):
+    def __init__(
+        self,
+        model: nn.Module,
+        loss_fn: nn.Module,
+        metric_fn: nn.Module,
+        train_metric_fn: nn.Module | None = None,
+    ):
         super().__init__()
         self.model = model
         self.loss_fn = loss_fn
         self.metric_fn = metric_fn
+        self.train_metric_fn = train_metric_fn
 
     def forward(self, x: Tensor) -> Tensor:
         return self.model(x)
@@ -18,6 +25,12 @@ class LightningLearner(pl.LightningModule):
         embeddings = self(images)
         loss = self.loss_fn(embeddings, labels)
         self.log("train/loss", loss)
+
+        if self.train_metric_fn is not None:
+            train_metrics = self.train_metric_fn(embeddings, labels)
+            for k, v in train_metrics.items():
+                self.log(f"train/{k}", v)
+
         return loss
 
     def validation_step(self, batch, batch_idx, dataloader_idx=0):

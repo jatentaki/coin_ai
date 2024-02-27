@@ -38,6 +38,15 @@ class DotProductLoss(nn.Module):
 
 
 class MarginLoss(nn.Module):
+    def __init__(self, margin: float = 0.5, negative_weight: float = 1.0):
+        super().__init__()
+
+        assert margin >= 0, "Margin must be non-negative"
+        assert negative_weight > 0, "Negative weight must be positive"
+
+        self.margin = margin
+        self.negative_weight = negative_weight
+
     def forward(self, embeddings: Tensor, labels: Tensor) -> Tensor:
         similarity = self.similarity(embeddings)
         gt_similarity = labels.unsqueeze(0) == labels.unsqueeze(1)
@@ -52,6 +61,7 @@ class MarginLoss(nn.Module):
             similarity,
             torch.full_like(similarity, fill_value=float("-inf")),
         ).amax(dim=-1)
+
         negative = torch.where(
             is_valid_negative,
             similarity,
@@ -66,7 +76,10 @@ class MarginLoss(nn.Module):
             torch.isfinite(negative), negative, torch.zeros_like(negative)
         )
 
-        return torch.relu(negative - positive + 0.5).mean()
+        pre_relu = self.negative_weight * negative - positive + self.margin
+        losses = F.relu(pre_relu)
+
+        return losses.mean()
 
     def similarity(
         self, embeddings: Tensor, other_embeddings: Tensor | None = None

@@ -144,3 +144,46 @@ class DiversityLoss(nn.Module):
         else:
             other_embeddings = F.normalize(other_embeddings, dim=-1, p=2)
         return torch.einsum("ic,jc->ij", embeddings, other_embeddings)
+
+
+class ExhaustiveMarginLoss(nn.Module):
+    def __init__(self, margin: float = 0.5, negative_weight: float = 1.0):
+        super().__init__()
+
+        assert margin >= 0, "Margin must be non-negative"
+        assert negative_weight > 0, "Negative weight must be positive"
+
+        self.margin = margin
+        self.negative_weight = negative_weight
+
+    def forward(self, embeddings: Tensor, labels: Tensor) -> Tensor:
+        similarity = self.similarity(embeddings)
+        gt_similarity = labels.unsqueeze(0) == labels.unsqueeze(1)
+
+        is_valid_positive = gt_similarity.clone()
+        is_valid_positive.fill_diagonal_(0)
+        is_valid_negative = (~gt_similarity).clone()
+        is_valid_negative.fill_diagonal_(0)
+
+        pre_relu = (
+            self.negative_weight * similarity.unsqueeze(1)
+            - similarity.unsqueeze(0)
+            + self.margin
+        )
+        mask = (
+            is_valid_positive.unsqueeze(1)
+            & is_valid_negative.unsqueeze(0)
+            & pre_relu.ge(0)
+        )
+
+        return pre_relu[mask].mean()
+
+    def similarity(
+        self, embeddings: Tensor, other_embeddings: Tensor | None = None
+    ) -> Tensor:
+        embeddings = F.normalize(embeddings, dim=-1, p=2)
+        if other_embeddings is None:
+            other_embeddings = embeddings
+        else:
+            other_embeddings = F.normalize(other_embeddings, dim=-1, p=2)
+        return torch.einsum("ic,jc->ij", embeddings, other_embeddings)

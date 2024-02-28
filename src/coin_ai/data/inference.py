@@ -38,17 +38,23 @@ class ResizeAndKeepRatio:
 class InferenceImageDataset:
     def __init__(self, root: str, transform: callable):
         self.root = root
-        self.images = [f for f in os.listdir(root) if f.endswith(".png")]
+        self.image_relative_paths = []
+        for dir, _, files in os.walk(root):
+            dir = os.path.relpath(dir, root)
+            for file in files:
+                if file.endswith(".png"):
+                    self.image_relative_paths.append(os.path.join(dir, file))
+
         self.transform = transform
 
     def __len__(self):
-        return len(self.images)
+        return len(self.image_relative_paths)
 
-    def load_by_name(self, name: str) -> Tensor:
-        path = os.path.join(self.root, name)
+    def load_by_relative_path(self, relative_path: str) -> Tensor:
+        path = os.path.join(self.root, relative_path)
         image = io.read_image(path, io.ImageReadMode.RGB)
         return self.transform(image).squeeze(0)
 
     def __getitem__(self, idx) -> tuple[Tensor, str]:
-        name = self.images[idx]
-        return self.load_by_name(name), name
+        relative_path = self.image_relative_paths[idx]
+        return self.load_by_relative_path(relative_path), relative_path

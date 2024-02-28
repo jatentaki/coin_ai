@@ -40,7 +40,7 @@ class LightningLearner(pl.LightningModule):
         for k, v in metrics.items():
             self.log(f"val/{k}", v)
 
-    def configure_optimizers(self):
+    def configure_optimizers(self, weight_decay: float = 1e-2, lr: float = 1e-4):
         decay_params = [
             p
             for n, p in self.model.named_parameters()
@@ -54,10 +54,10 @@ class LightningLearner(pl.LightningModule):
 
         optimizer = torch.optim.AdamW(
             [
-                {"params": decay_params, "weight_decay": 1e-2},
+                {"params": decay_params, "weight_decay": weight_decay},
                 {"params": non_decay_params, "weight_decay": 0.0},
             ],
-            lr=1e-4,
+            lr=lr,
         )
 
         return optimizer

@@ -128,3 +128,19 @@ class CosineEmbeddingLoss(nn.Module):
         return F.cosine_similarity(
             embeddings.unsqueeze(1), other_embeddings.unsqueeze(0), dim=-1
         )
+
+
+class DiversityLoss(nn.Module):
+    def forward(self, embeddings: Tensor, labels: Tensor) -> Tensor:
+        del labels
+        return self.similarity(embeddings).mean()
+
+    def similarity(
+        self, embeddings: Tensor, other_embeddings: Tensor | None = None
+    ) -> Tensor:
+        embeddings = F.normalize(embeddings, dim=-1, p=2)
+        if other_embeddings is None:
+            other_embeddings = embeddings
+        else:
+            other_embeddings = F.normalize(other_embeddings, dim=-1, p=2)
+        return torch.einsum("ic,jc->ij", embeddings, other_embeddings)

@@ -165,16 +165,14 @@ class ExhaustiveMarginLoss(nn.Module):
         is_valid_negative = (~gt_similarity).clone()
         is_valid_negative.fill_diagonal_(0)
 
-        pre_relu = (
-            self.negative_weight * similarity.unsqueeze(1)
-            - similarity.unsqueeze(0)
-            + self.margin
-        )
-        mask = (
-            is_valid_positive.unsqueeze(1)
-            & is_valid_negative.unsqueeze(0)
-            & pre_relu.ge(0)
-        )
+        positive_dist = similarity.unsqueeze(0)
+        negative_dist = similarity.unsqueeze(1)
+
+        positive_mask = is_valid_positive.unsqueeze(0)
+        negative_mask = is_valid_negative.unsqueeze(1)
+
+        pre_relu = self.negative_weight * negative_dist - positive_dist + self.margin
+        mask = positive_mask & negative_mask & pre_relu.ge(0)
 
         return pre_relu[mask].mean()
 

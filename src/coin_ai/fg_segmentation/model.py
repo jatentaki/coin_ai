@@ -21,14 +21,14 @@ class SegmentationDino(nn.Module):
 
     def forward(self, x: Tensor) -> Tensor:
         b, c, h, w = x.shape
-        assert (c, h, w) == (3, 37, 37)
+        assert (c, h, w) == (3, 518, 518)
 
         if x.dtype == torch.uint8:
             x = transforms.ToDtype(torch.float32, scale=True)(x)
         x = transforms.Grayscale(num_output_channels=3)(x)
-        x = self.dino.forward_features(x)
+        x = self.dino.forward_features(x)["x_norm_patchtokens"]
         x = rearrange(x, "b (h w) c -> b h w c", h=37, w=37)
-        return self.head(x["x_norm_patchtokens"])
+        return self.head(x)
 
     def segment(self, x: Tensor) -> Tensor:
         return self.forward(x).squeeze(-1) > 0

@@ -1,9 +1,11 @@
 from importlib import resources
 
 import torch
+import numpy as np
 from torch import nn, Tensor
 from einops import rearrange
 from torchvision.transforms import v2 as transforms
+from kornia.utils import image_to_tensor
 
 
 class SegmentationDino(nn.Module):
@@ -19,7 +21,10 @@ class SegmentationDino(nn.Module):
             ) as path:
                 self.head.load_state_dict(torch.load(path, map_location="cpu"))
 
-    def forward(self, x: Tensor) -> Tensor:
+    def forward(self, x: Tensor | np.ndarray) -> Tensor:
+        if isinstance(x, np.ndarray):
+            x = image_to_tensor(x, keepdim=False)
+
         b, c, h, w = x.shape
         assert (c, h, w) == (3, 518, 518)
 

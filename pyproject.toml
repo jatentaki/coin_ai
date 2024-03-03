@@ -9,12 +9,10 @@ authors = [
   { name="Michal Jan Tyszkiewicz", email="michal.tyszkiewicz@gmail.com" },
 ]
 description = "Coin recognition"
+
 requires-python = ">=3.10"
-classifiers = [
-    "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
-]
+#include-package-data = true
+
 dependencies = [
     "torch >= 2.1.0",
     "einops",
@@ -23,3 +21,12 @@ dependencies = [
     "kornia",
     "lightning",
 ]
+
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[tool.setuptools.package-data]
+coin_ai = ["*.pt"]

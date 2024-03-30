@@ -14,7 +14,7 @@ requires-python = ">=3.10"
 #include-package-data = true
 
 dependencies = [
-    "torch >= 2.1.0",
+    "torch >= 2.0",
     "einops",
     "matplotlib",
     "numpy",

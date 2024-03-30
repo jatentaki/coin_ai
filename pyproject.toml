@@ -11,7 +11,6 @@ authors = [
 description = "Coin recognition"
 
 requires-python = ">=3.10"
-#include-package-data = true
 
 dependencies = [
     "torch >= 2.0",
@@ -28,5 +27,8 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 
-[tool.setuptools.package-data]
-coin_ai = ["*.pt"]
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]

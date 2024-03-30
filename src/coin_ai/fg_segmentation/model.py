@@ -21,7 +21,7 @@ class SegmentationDino(nn.Module):
             ) as path:
                 self.head.load_state_dict(torch.load(path, map_location="cpu"))
 
-    def forward(self, x: Tensor | np.ndarray) -> Tensor:
+    def preprocess(self, x: Tensor | np.ndarray) -> Tensor:
         if isinstance(x, np.ndarray):
             x = image_to_tensor(x, keepdim=False)
 
@@ -31,9 +31,16 @@ class SegmentationDino(nn.Module):
         if x.dtype == torch.uint8:
             x = transforms.ToDtype(torch.float32, scale=True)(x)
         x = transforms.Grayscale(num_output_channels=3)(x)
+
+        return x
+
+    def get_features(self, x: Tensor) -> Tensor:
         x = self.dino.forward_features(x)["x_norm_patchtokens"]
         x = rearrange(x, "b (h w) c -> b h w c", h=37, w=37)
-        return self.head(x)
+        return x
+
+    def forward(self, x: Tensor | np.ndarray) -> Tensor:
+        return self.head(self.get_features(self.preprocess(x)))
 
     def segment(self, x: Tensor) -> Tensor:
         return self.forward(x).squeeze(-1) > 0

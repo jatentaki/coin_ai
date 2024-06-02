@@ -4,4 +4,4 @@ __pycache__
 *.pth
 *.egg-info
 checkpoints
-
+*.png

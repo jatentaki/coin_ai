@@ -88,6 +88,12 @@ class HomographyBatch(NamedTuple):
             target_size=self.images.shape[-2:],
         )
 
+    def to(self, *args, **kwargs) -> HomographyBatch:
+        return HomographyBatch(
+            images=self.images.to(*args, **kwargs),
+            H_12=self.H_12.to(*args, **kwargs),
+        )
+
 
 class AugmentationBuilder(NamedTuple):
     batch: HomographyBatch
@@ -110,7 +116,7 @@ class AugmentationBuilder(NamedTuple):
             target_size=target_size,
         )
 
-    def get_random_homography_transform(self, scale: float = 0.125) -> Tensor:
+    def random_h_4_point(self, scale: float = 0.125) -> Tensor:
         corners = repeat(self.batch.corners, "i j -> b i j", b=self.batch.B)
 
         scale_px = torch.tensor([self.target_size]).reshape(1, 1, 2) * scale
@@ -153,6 +159,13 @@ class HPairDataset:
 
     def __getitem__(self, idx: int) -> HomographyBatch:
         return HomographyBatch.from_path_pairs([self.inferred_pairs[idx]])
+
+    @staticmethod
+    def collate_fn(batch: list[HomographyBatch]) -> HomographyBatch:
+        images = torch.cat([b.images for b in batch], dim=1)
+        H_12 = torch.cat([b.H_12 for b in batch])
+
+        return HomographyBatch(images=images, H_12=H_12)
 
     @staticmethod
     def parse_homography_csv(source_path: str) -> list[HPathPair]:
@@ -219,13 +232,3 @@ class HPairDataset:
                 )
 
         return inferred_pairs
-
-    # def recursive_parse_homography_csv(root_path: str) -> list[HPair]:
-    #    parsed = []
-
-    #    for root, _, files in os.walk(root_path):
-    #        for file in files:
-    #            if file == "homographies.csv":
-    #                parsed.extend(parse_homography_csv(os.path.join(root, file)))
-
-    #    return parsed

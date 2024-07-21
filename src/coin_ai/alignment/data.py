@@ -4,7 +4,7 @@ import csv
 import os
 from dataclasses import dataclass
 from functools import partial
-from typing import NamedTuple
+from typing import Callable, NamedTuple
 
 import torch
 import imageio
@@ -52,11 +52,6 @@ class HomographyBatch(NamedTuple):
 
         return HomographyBatch(images=images, H_12=H_12s)
 
-    def apply_h(self, H_12: Tensor) -> HomographyBatch:
-        H_12 = H_12.to(self.images.device)
-        images = KG.homography_warp(self.images, H_12)
-        return HomographyBatch(images=images, H_12=self.H_12)
-
     def slice(self, start: int | None, end: int | None) -> HomographyBatch:
         images = self.images[:, start:end]
         H_12 = self.H_12[start:end]
@@ -84,7 +79,9 @@ class HomographyBatch(NamedTuple):
     def build_augmentation(self) -> AugmentationBuilder:
         return AugmentationBuilder(
             batch=self,
-            transform=repeat(torch.eye(3), "i j -> c b i j", c=2, b=self.B),
+            transform=repeat(
+                torch.eye(3, device=self.images.device), "i j -> c b i j", c=2, b=self.B
+            ),
             target_size=self.images.shape[-2:],
         )
 
@@ -143,22 +140,44 @@ class AugmentationBuilder(NamedTuple):
         )
         return HomographyBatch(
             images=torch.vmap(warp_fn, in_dims=(0, 0))(
-                self.batch.images, self.transform
+                self.batch.images, torch.inverse(self.transform)
             ),
             H_12=self.batch.H_12,
         )
 
+    def to(self, *args, **kwargs) -> AugmentationBuilder:
+        return AugmentationBuilder(
+            batch=self.batch.to(*args, **kwargs),
+            transform=self.transform.to(*args, **kwargs),
+            target_size=self.target_size,
+        )
+
 
 class HPairDataset:
-    def __init__(self, csv_path: str):
+    def __init__(
+        self,
+        csv_path: str,
+        augmentation: Callable[[HomographyBatch], HomographyBatch],
+        skip_identity: bool = False,
+        infer: bool = True,
+    ):
         self.base_pairs = self.parse_homography_csv(csv_path)
-        self.inferred_pairs = self.infer_homographies(self.base_pairs)
+
+        if not infer:
+            self.inferred_pairs = self.base_pairs
+        else:
+            self.inferred_pairs = self.infer_homographies(
+                self.base_pairs, skip_identity
+            )
+        self.augmentation = augmentation
 
     def __len__(self) -> int:
         return len(self.inferred_pairs)
 
     def __getitem__(self, idx: int) -> HomographyBatch:
-        return HomographyBatch.from_path_pairs([self.inferred_pairs[idx]])
+        batch = HomographyBatch.from_path_pairs([self.inferred_pairs[idx]])
+        batch = self.augmentation(batch)
+        return batch
 
     @staticmethod
     def collate_fn(batch: list[HomographyBatch]) -> HomographyBatch:
@@ -208,7 +227,9 @@ class HPairDataset:
         return pairs
 
     @staticmethod
-    def infer_homographies(hpairs: list[HPathPair]) -> list[HPathPair]:
+    def infer_homographies(
+        hpairs: list[HPathPair], skip_identity: bool = False
+    ) -> list[HPathPair]:
         g = nx.DiGraph()
         for pair in hpairs + [pair.flip() for pair in hpairs]:
             g.add_edge(pair.path1, pair.path2, H_matrix=pair.H_12)
@@ -216,6 +237,8 @@ class HPairDataset:
         inferred_pairs = []
         for source, paths in nx.all_pairs_shortest_path(g):
             for target, path in paths.items():
+                if skip_identity and source == target:
+                    continue
                 path_graph = nx.path_graph(path)
 
                 total_h_matrix = torch.eye(3)

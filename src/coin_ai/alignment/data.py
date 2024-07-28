@@ -13,6 +13,43 @@ import kornia.geometry as KG
 from torch import Tensor
 from einops import rearrange, repeat
 
+FLIP_X_MATRIX = torch.tensor(
+    [
+        [-1, 0, 518],
+        [0, 1, 0],
+        [0, 0, 1],
+    ],
+    dtype=torch.float32,
+)
+
+FLIP_MATRICES = torch.stack(
+    [
+        torch.eye(3, dtype=torch.float32),
+        FLIP_X_MATRIX,
+    ]
+)
+
+ROT_90_MATRIX = torch.tensor(
+    [
+        [0, -1, 518],
+        [1, 0, 0],
+        [0, 0, 1],
+    ],
+    dtype=torch.float32,
+)
+
+ROT_180_MATRIX = ROT_90_MATRIX @ ROT_90_MATRIX
+ROT_270_MATRIX = ROT_180_MATRIX @ ROT_90_MATRIX
+
+ROT_MATRICES = torch.stack(
+    [
+        torch.eye(3, dtype=torch.float32),
+        ROT_90_MATRIX,
+        ROT_180_MATRIX,
+        ROT_270_MATRIX,
+    ]
+)
+
 
 @dataclass
 class HPathPair:
@@ -130,8 +167,19 @@ class AugmentationBuilder(NamedTuple):
 
         return torch.stack([transform_2, transform_1], dim=0)
 
+    def random_rotate_transform(self) -> torch.Tensor:
+        index = torch.randint(4, (self.batch.B,))
+        return repeat(ROT_MATRICES[index], "b i j -> 2 b i j")
+
+    def random_flip_transform(self) -> torch.Tensor:
+        index = torch.randint(2, (self.batch.B,))
+        return repeat(FLIP_MATRICES[index], "b i j -> 2 b i j")
+
     def apply(self, transform: Tensor) -> AugmentationBuilder:
-        assert transform.shape == self.transform.shape
+        assert transform.shape == self.transform.shape, (
+            transform.shape,
+            self.transform.shape,
+        )
         t_1, t_2 = transform
         new_H_12 = t_2 @ self.batch.H_12 @ torch.inverse(t_1)
         return AugmentationBuilder(

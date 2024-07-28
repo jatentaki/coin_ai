@@ -91,6 +91,12 @@ class HomographyBatch(NamedTuple):
             H_12=self.H_12.to(*args, **kwargs),
         )
 
+    def flip(self) -> HomographyBatch:
+        return HomographyBatch(
+            images=self.images.flip((0,)),
+            H_12=self.H_12.inverse(),
+        )
+
 
 class AugmentationBuilder(NamedTuple):
     batch: HomographyBatch
@@ -160,6 +166,7 @@ class HPairDataset:
         augmentation: Callable[[HomographyBatch], HomographyBatch],
         skip_identity: bool = False,
         infer: bool = True,
+        ordered_pairs: bool = True,
     ):
         self.base_pairs = self.parse_homography_csv(csv_path)
 
@@ -169,6 +176,12 @@ class HPairDataset:
             self.inferred_pairs = self.infer_homographies(
                 self.base_pairs, skip_identity
             )
+
+        if ordered_pairs:
+            self.inferred_pairs = [
+                pair for pair in self.inferred_pairs if pair.path1 >= pair.path2
+            ]
+
         self.augmentation = augmentation
 
     def __len__(self) -> int:

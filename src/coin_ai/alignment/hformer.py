@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 
+from coin_ai.alignment.data import HomographyBatch
 import torch
 import kornia.geometry as KG
 from torch import nn, Tensor
@@ -87,6 +88,20 @@ class CrossAttentionBlock(nn.Module):
         return q
 
 
+def homography_loss(
+    homography_batch: HomographyBatch,
+    predictions: HCorrespondences,
+) -> Tensor:
+    corners_b_gt = KG.linalg.transform_points(
+        homography_batch.H_12, predictions.corners_a
+    )
+
+    pred_corners_b = predictions.corners_b / homography_batch.images.shape[-1]
+    corners_b_gt = corners_b_gt / homography_batch.images.shape[-1]
+
+    return nn.functional.mse_loss(pred_corners_b, corners_b_gt)
+
+
 class HFormer(nn.Module):
     def __init__(
         self, n_layers: int = 3, d_target: int = 128, deformation_scale: float = 0.5
@@ -120,10 +135,11 @@ class HFormer(nn.Module):
         )
         self.deformation_scale = deformation_scale
 
-    def forward(self, images: Tensor) -> HCorrespondences:
-        b = images.shape[1]
+    def forward_from_features(
+        self, src_feat: Tensor, dst_feat: Tensor, image_shape: tuple[int, int]
+    ) -> HCorrespondences:
+        b = src_feat.shape[0]
 
-        src_feat, dst_feat = self._get_features(images)
         q = self.query_init(src_feat)
 
         for i, block in enumerate(self.attn_blocks):
@@ -139,14 +155,18 @@ class HFormer(nn.Module):
         corners_b = self.corners_a + self.deformation_scale * offset
 
         scale = torch.tensor(
-            [images.shape[-1], images.shape[-2]],
+            image_shape,
             dtype=torch.float32,
-            device=images.device,
+            device=offset.device,
         )
         return HCorrespondences(
             corners_a=self.corners_a.repeat(b, 1, 1) * scale,
             corners_b=corners_b * scale,
         )
+
+    def forward(self, images: Tensor) -> HCorrespondences:
+        src_feat, dst_feat = self._get_features(images)
+        return self.forward_from_features(src_feat, dst_feat, images.shape[-2:])
 
     def _get_features(self, images: Tensor) -> tuple[Tensor, Tensor]:
         """
@@ -167,6 +187,23 @@ class HFormer(nn.Module):
             features_flat, "(t b) h w c -> t b (h w) c", b=b, t=2
         )
         return src_feat, dst_feat
+
+    def loss(self, homography_batch: HomographyBatch) -> Tensor:
+        feat_a, feat_b = self._get_features(homography_batch.images)
+        loss_ab = homography_loss(
+            homography_batch,
+            self.forward_from_features(
+                feat_a, feat_b, homography_batch.images.shape[-2:]
+            ),
+        )
+        loss_ba = homography_loss(
+            homography_batch.flip(),
+            self.forward_from_features(
+                feat_b, feat_a, homography_batch.images.shape[-2:]
+            ),
+        )
+
+        return (loss_ab + loss_ba) / 2
 
 
 class MeanLearner(nn.Module):

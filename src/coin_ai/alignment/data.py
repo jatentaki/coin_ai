@@ -119,8 +119,8 @@ class AugmentationBuilder(NamedTuple):
         scale_px = torch.tensor([self.target_size]).reshape(1, 1, 2) * scale
         corners_1 = corners + torch.randn_like(corners) * scale_px
         corners_2 = corners + torch.randn_like(corners) * scale_px
-        transform_1 = KG.get_perspective_transform(corners_1, corners_2)
-        transform_2 = KG.get_perspective_transform(corners_2, corners_1)
+        transform_1 = KG.get_perspective_transform(corners_2, corners_1)
+        transform_2 = KG.get_perspective_transform(corners_1, corners_2)
 
         return torch.stack([transform_2, transform_1], dim=0)
 
@@ -140,7 +140,7 @@ class AugmentationBuilder(NamedTuple):
         )
         return HomographyBatch(
             images=torch.vmap(warp_fn, in_dims=(0, 0))(
-                self.batch.images, torch.inverse(self.transform)
+                self.batch.images, self.transform
             ),
             H_12=self.batch.H_12,
         )

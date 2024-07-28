@@ -11,8 +11,6 @@ from einops import rearrange, repeat
 from torchvision.transforms import v2 as transforms
 from kornia.utils import image_to_tensor
 
-from coin_ai.alignment.types import Matches, Batch
-
 
 class DenseDino(nn.Module):
     def __init__(self):
@@ -75,30 +73,3 @@ class Embedder(nn.Module):
     def forward(self, x: Tensor | np.ndarray) -> Tensor:
         x = self.dense_dino(x)
         return self.head(x)
-
-
-def get_grid(embedding: Tensor) -> Tensor:
-    return kornia.utils.create_meshgrid(
-        embedding.shape[1],
-        embedding.shape[2],
-        normalized_coordinates=True,
-        device=embedding.device,
-        dtype=embedding.dtype,
-    ).squeeze(0)
-
-
-def transform_grid(grid: Tensor, H: Tensor) -> Tensor:
-    H_norm = KG.normalize_homography(H, (518, 518), (518, 518))
-    grid_flat = repeat(grid, "h w t -> b (h w) t", b=H.shape[0])
-    transformed_flat = KG.transform_points(H_norm, grid_flat)
-    return rearrange(transformed_flat, "b (h w) t -> b h w t", h=37, w=37)
-
-
-class ScoringModel(nn.Module, ABC):
-    @abstractmethod
-    def forward(self, feat_1: Tensor, feat_2: Tensor) -> Matches:
-        raise NotImplementedError
-
-    @abstractmethod
-    def loss(self, batch: Batch) -> tuple[Tensor, dict[str, Tensor]]:
-        raise NotImplemented

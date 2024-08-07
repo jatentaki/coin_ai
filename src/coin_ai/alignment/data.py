@@ -138,6 +138,13 @@ class HomographyBatch(NamedTuple):
             H_12=self.H_12.inverse(),
         )
 
+    @staticmethod
+    def collate_fn(batch: list[HomographyBatch]) -> HomographyBatch:
+        images = torch.cat([b.images for b in batch], dim=1)
+        H_12 = torch.cat([b.H_12 for b in batch])
+
+        return HomographyBatch(images=images, H_12=H_12)
+
 
 class AugmentationBuilder(NamedTuple):
     batch: HomographyBatch
@@ -210,12 +217,20 @@ class AugmentationBuilder(NamedTuple):
             target_size=self.target_size,
         )
 
+    @staticmethod
+    def collate_fn(batch: list[AugmentationBuilder]) -> AugmentationBuilder:
+        return AugmentationBuilder(
+            batch=HomographyBatch.collate_fn([b.batch for b in batch]),
+            transform=torch.cat([b.transform for b in batch], dim=1),
+            target_size=batch[0].target_size,
+        )
+
 
 class HPairDataset:
     def __init__(
         self,
         csv_path: str,
-        augmentation: Callable[[HomographyBatch], HomographyBatch],
+        augmentation: Callable[[HomographyBatch], AugmentationBuilder],
         skip_identity: bool = True,
         infer: bool = True,
         ordered_pairs: bool = True,
@@ -241,18 +256,12 @@ class HPairDataset:
     def __len__(self) -> int:
         return len(self.inferred_pairs) * self.replicate
 
-    def __getitem__(self, idx: int) -> HomographyBatch:
+    def __getitem__(self, idx: int) -> AugmentationBuilder:
         idx = idx // self.replicate
         batch = HomographyBatch.from_path_pairs([self.inferred_pairs[idx]])
-        batch = self.augmentation(batch)
-        return batch
+        return self.augmentation(batch)
 
-    @staticmethod
-    def collate_fn(batch: list[HomographyBatch]) -> HomographyBatch:
-        images = torch.cat([b.images for b in batch], dim=1)
-        H_12 = torch.cat([b.H_12 for b in batch])
-
-        return HomographyBatch(images=images, H_12=H_12)
+    collate_fn = AugmentationBuilder.collate_fn
 
     @staticmethod
     def parse_homography_csv(source_path: str) -> list[HPathPair]:
@@ -354,7 +363,7 @@ def assemble_datasets(
     return ConcatDataset(datasets)
 
 
-def train_augmentation(batch: HomographyBatch) -> HomographyBatch:
+def train_augmentation(batch: HomographyBatch) -> AugmentationBuilder:
     builder = batch.build_augmentation()
     alignment = batch.get_alignment_transform()
 
@@ -362,12 +371,19 @@ def train_augmentation(batch: HomographyBatch) -> HomographyBatch:
     flip = builder.random_flip_transform()
     distortion = builder.random_h_4_point(scale=0.05)
 
-    out_batch = (
-        builder.apply(alignment).apply(rotation).apply(flip).apply(distortion).build()
+    batch = batch._replace(
+        images=KC.rgb_to_grayscale(batch.images).repeat(1, 1, 3, 1, 1)
     )
-    return out_batch._replace(
-        images=KC.rgb_to_grayscale(out_batch.images).repeat(1, 1, 3, 1, 1)
+
+    return builder.apply(alignment).apply(rotation).apply(flip).apply(distortion)
+
+
+def val_augmentation(batch: HomographyBatch) -> AugmentationBuilder:
+    batch = batch._replace(
+        images=KC.rgb_to_grayscale(batch.images).repeat(1, 1, 3, 1, 1)
     )
+
+    return batch.build_augmentation()
 
 
 class CoinDataModule(LightningDataModule):
@@ -377,25 +393,27 @@ class CoinDataModule(LightningDataModule):
         val_root: str,
         batch_size: int,
         num_workers: int = 0,
-        augmentation: Callable[[HomographyBatch], HomographyBatch] = train_augmentation,
+        train_aug: Callable[[HomographyBatch], HomographyBatch] = train_augmentation,
+        val_aug: Callable[[HomographyBatch], HomographyBatch] = val_augmentation,
     ):
         super().__init__()
         self.train_root = train_root
         self.val_root = val_root
         self.batch_size = batch_size
         self.num_workers = num_workers
-        self.augmentation = augmentation
+        self.train_aug = train_aug
+        self.val_aug = val_aug
 
     def setup(self, stage: str):
         if stage == "fit" or stage is None:
             self.train_dataset = assemble_datasets(
                 self.train_root,
-                augmentation=self.augmentation,
+                augmentation=self.train_aug,
                 replicate=8,
             )
             self.val_dataset = assemble_datasets(
                 self.val_root,
-                augmentation=torch.nn.Identity(),
+                augmentation=self.val_aug,
             )
 
     def train_dataloader(self):

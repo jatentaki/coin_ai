@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import glob
 import os
 from dataclasses import dataclass
 from functools import partial
@@ -10,8 +11,11 @@ import torch
 import imageio
 import networkx as nx
 import kornia.geometry as KG
+import kornia.color as KC
 from torch import Tensor
 from einops import rearrange, repeat
+from lightning import LightningDataModule
+from torch.utils.data import ConcatDataset
 
 FLIP_X_MATRIX = torch.tensor(
     [
@@ -212,11 +216,13 @@ class HPairDataset:
         self,
         csv_path: str,
         augmentation: Callable[[HomographyBatch], HomographyBatch],
-        skip_identity: bool = False,
+        skip_identity: bool = True,
         infer: bool = True,
         ordered_pairs: bool = True,
+        replicate: int = 1,
     ):
         self.base_pairs = self.parse_homography_csv(csv_path)
+        self.replicate = replicate
 
         if not infer:
             self.inferred_pairs = self.base_pairs
@@ -233,9 +239,10 @@ class HPairDataset:
         self.augmentation = augmentation
 
     def __len__(self) -> int:
-        return len(self.inferred_pairs)
+        return len(self.inferred_pairs) * self.replicate
 
     def __getitem__(self, idx: int) -> HomographyBatch:
+        idx = idx // self.replicate
         batch = HomographyBatch.from_path_pairs([self.inferred_pairs[idx]])
         batch = self.augmentation(batch)
         return batch
@@ -316,3 +323,93 @@ class HPairDataset:
                 )
 
         return inferred_pairs
+
+
+def assemble_datasets(
+    path: str,
+    augmentation: Callable[
+        [
+            HomographyBatch,
+        ],
+        HomographyBatch,
+    ],
+    infer: bool = True,
+    skip_identity: bool = True,
+    ordered_pairs: bool = True,
+    replicate: int = 1,
+) -> ConcatDataset:
+    paths = glob.glob(f"{path}/**/homographies.csv", recursive=True)
+
+    datasets = [
+        HPairDataset(
+            path,
+            augmentation=augmentation,
+            skip_identity=skip_identity,
+            infer=infer,
+            ordered_pairs=ordered_pairs,
+            replicate=replicate,
+        )
+        for path in paths
+    ]
+    return ConcatDataset(datasets)
+
+
+def train_augmentation(batch: HomographyBatch) -> HomographyBatch:
+    builder = batch.build_augmentation()
+    alignment = batch.get_alignment_transform()
+
+    rotation = builder.random_rotate_transform()
+    flip = builder.random_flip_transform()
+    distortion = builder.random_h_4_point(scale=0.05)
+
+    out_batch = (
+        builder.apply(alignment).apply(rotation).apply(flip).apply(distortion).build()
+    )
+    return out_batch._replace(
+        images=KC.rgb_to_grayscale(out_batch.images).repeat(1, 1, 3, 1, 1)
+    )
+
+
+class CoinDataModule(LightningDataModule):
+    def __init__(
+        self,
+        train_root: str,
+        val_root: str,
+        batch_size: int,
+        num_workers: int = 0,
+        augmentation: Callable[[HomographyBatch], HomographyBatch] = train_augmentation,
+    ):
+        super().__init__()
+        self.train_root = train_root
+        self.val_root = val_root
+        self.batch_size = batch_size
+        self.num_workers = num_workers
+        self.augmentation = augmentation
+
+    def setup(self, stage: str):
+        if stage == "fit" or stage is None:
+            self.train_dataset = assemble_datasets(
+                self.train_root,
+                augmentation=self.augmentation,
+                replicate=8,
+            )
+            self.val_dataset = assemble_datasets(
+                self.val_root,
+                augmentation=torch.nn.Identity(),
+            )
+
+    def train_dataloader(self):
+        return torch.utils.data.DataLoader(
+            self.train_dataset,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            collate_fn=HPairDataset.collate_fn,
+        )
+
+    def val_dataloader(self):
+        return torch.utils.data.DataLoader(
+            self.val_dataset,
+            batch_size=self.batch_size,
+            num_workers=self.num_workers,
+            collate_fn=HPairDataset.collate_fn,
+        )

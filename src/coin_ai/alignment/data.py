@@ -151,6 +151,9 @@ class AugmentationBuilder(NamedTuple):
     transform: Tensor  # [2, B, 3, 3]
     target_size: tuple[int, int]
 
+    def __repr__(self) -> str:
+        return f"AugmentationBuilder(batch={self.batch}, transform={tuple(self.transform.shape)}, target_size={self.target_size})"
+
     def resize(self, target_size: tuple[int, int]) -> AugmentationBuilder:
         h, w = target_size
         resize_transform = KG.get_perspective_transform(
@@ -393,6 +396,7 @@ class CoinDataModule(LightningDataModule):
         val_root: str,
         batch_size: int,
         num_workers: int = 0,
+        train_replicate: int = 8,
         train_aug: Callable[[HomographyBatch], HomographyBatch] = train_augmentation,
         val_aug: Callable[[HomographyBatch], HomographyBatch] = val_augmentation,
     ):
@@ -401,6 +405,7 @@ class CoinDataModule(LightningDataModule):
         self.val_root = val_root
         self.batch_size = batch_size
         self.num_workers = num_workers
+        self.train_replicate = train_replicate
         self.train_aug = train_aug
         self.val_aug = val_aug
 
@@ -409,7 +414,7 @@ class CoinDataModule(LightningDataModule):
             self.train_dataset = assemble_datasets(
                 self.train_root,
                 augmentation=self.train_aug,
-                replicate=8,
+                replicate=self.train_replicate,
             )
             self.val_dataset = assemble_datasets(
                 self.val_root,

@@ -176,16 +176,16 @@ class HFormer(nn.Module):
             src_feat: B x N x C
             dst_feat: B x N x C
         """
-        t, b, c, h, w = images.shape
+        b, t, c, h, w = images.shape
         assert t == 2
         assert c == 3
 
-        images_flat = rearrange(images, "t b c h w -> (t b) c h w")
+        images_flat = rearrange(images, "b t c h w -> (b t) c h w")
         with torch.no_grad():
             features_flat: Tensor = self.dino(images_flat)
         src_feat, dst_feat = rearrange(
-            features_flat, "(t b) h w c -> t b (h w) c", b=b, t=2
-        )
+            features_flat, "(b t) h w c -> b t (h w) c", b=b, t=2
+        ).unbind(dim=1)
         return src_feat, dst_feat
 
     def loss(self, homography_batch: HomographyBatch) -> Tensor:

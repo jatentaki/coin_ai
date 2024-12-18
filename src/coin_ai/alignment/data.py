@@ -76,7 +76,7 @@ class HPathPair:
 
 
 class HomographyBatch(NamedTuple):
-    images: Tensor  # [2, B, C, H, W]
+    images: Tensor  # [B, 2, C, H, W]
     H_12: Tensor  # [B, 3, 3]
 
     def __repr__(self) -> str:
@@ -87,8 +87,8 @@ class HomographyBatch(NamedTuple):
         images = [torch.stack([p.get_image1(), p.get_image2()], dim=0) for p in pairs]
         H_12s = [pair.H_12 for pair in pairs]
 
-        images = torch.stack(images, dim=1)
-        images = rearrange(images, "t b h w c -> t b c h w")
+        images = torch.stack(images, dim=0)
+        images = rearrange(images, "b t h w c -> b t c h w")
         H_12s = torch.stack(H_12s)
 
         return HomographyBatch(images=images, H_12=H_12s)
@@ -114,15 +114,18 @@ class HomographyBatch(NamedTuple):
             [
                 self.H_12,
                 repeat(torch.eye(3), "i j -> b i j", b=self.B),
-            ]
+            ],
+            dim=1,
         )
 
     def build_augmentation(self) -> AugmentationBuilder:
+        transform = repeat(
+            torch.eye(3, device=self.images.device), "i j -> b 2 i j", b=self.B
+        )
+
         return AugmentationBuilder(
             batch=self,
-            transform=repeat(
-                torch.eye(3, device=self.images.device), "i j -> c b i j", c=2, b=self.B
-            ),
+            transform=transform,
             target_size=self.images.shape[-2:],
         )
 
@@ -134,21 +137,21 @@ class HomographyBatch(NamedTuple):
 
     def flip(self) -> HomographyBatch:
         return HomographyBatch(
-            images=self.images.flip((0,)),
+            images=self.images.flip((1,)),
             H_12=self.H_12.inverse(),
         )
 
     @staticmethod
     def collate_fn(batch: list[HomographyBatch]) -> HomographyBatch:
-        images = torch.cat([b.images for b in batch], dim=1)
-        H_12 = torch.cat([b.H_12 for b in batch])
+        images = torch.cat([b.images for b in batch], dim=0)
+        H_12 = torch.cat([b.H_12 for b in batch], dim=0)
 
         return HomographyBatch(images=images, H_12=H_12)
 
 
 class AugmentationBuilder(NamedTuple):
     batch: HomographyBatch
-    transform: Tensor  # [2, B, 3, 3]
+    transform: Tensor  # [B, 2, 3, 3]
     target_size: tuple[int, int]
 
     def __repr__(self) -> str:
@@ -162,7 +165,7 @@ class AugmentationBuilder(NamedTuple):
                 [[0, 0], [w, 0], [w, h], [0, h]], dtype=torch.float32
             ).unsqueeze(0),
         )
-        resize_transform = repeat(resize_transform, "B i j -> C B i j", C=2)
+        resize_transform = repeat(resize_transform, "B i j -> B 2 i j")
 
         return AugmentationBuilder(
             batch=self.batch,
@@ -179,22 +182,22 @@ class AugmentationBuilder(NamedTuple):
         transform_1 = KG.get_perspective_transform(corners_2, corners_1)
         transform_2 = KG.get_perspective_transform(corners_1, corners_2)
 
-        return torch.stack([transform_2, transform_1], dim=0)
+        return torch.stack([transform_2, transform_1], dim=1)
 
     def random_rotate_transform(self) -> torch.Tensor:
         index = torch.randint(4, (self.batch.B,))
-        return repeat(ROT_MATRICES[index], "b i j -> 2 b i j")
+        return repeat(ROT_MATRICES[index], "b i j -> b 2 i j")
 
     def random_flip_transform(self) -> torch.Tensor:
         index = torch.randint(2, (self.batch.B,))
-        return repeat(FLIP_MATRICES[index], "b i j -> 2 b i j")
+        return repeat(FLIP_MATRICES[index], "b i j -> b 2 i j")
 
     def apply(self, transform: Tensor) -> AugmentationBuilder:
         assert transform.shape == self.transform.shape, (
             transform.shape,
             self.transform.shape,
         )
-        t_1, t_2 = transform
+        t_1, t_2 = transform.unbind(dim=1)
         new_H_12 = t_2 @ self.batch.H_12 @ torch.inverse(t_1)
         return AugmentationBuilder(
             batch=self.batch._replace(H_12=new_H_12),
@@ -224,7 +227,7 @@ class AugmentationBuilder(NamedTuple):
     def collate_fn(batch: list[AugmentationBuilder]) -> AugmentationBuilder:
         return AugmentationBuilder(
             batch=HomographyBatch.collate_fn([b.batch for b in batch]),
-            transform=torch.cat([b.transform for b in batch], dim=1),
+            transform=torch.cat([b.transform for b in batch], dim=0),
             target_size=batch[0].target_size,
         )
 

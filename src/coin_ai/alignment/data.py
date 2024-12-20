@@ -370,6 +370,10 @@ def assemble_datasets(
 
 
 def train_augmentation(batch: HomographyBatch) -> AugmentationBuilder:
+    batch = batch._replace(
+        images=KC.rgb_to_grayscale(batch.images).repeat(1, 1, 3, 1, 1)
+    )
+
     builder = batch.build_augmentation()
     alignment = batch.get_alignment_transform()
 
@@ -377,11 +381,8 @@ def train_augmentation(batch: HomographyBatch) -> AugmentationBuilder:
     flip = builder.random_flip_transform()
     distortion = builder.random_h_4_point(scale=0.05)
 
-    batch = batch._replace(
-        images=KC.rgb_to_grayscale(batch.images).repeat(1, 1, 3, 1, 1)
-    )
-
-    return builder.apply(alignment).apply(rotation).apply(flip).apply(distortion)
+    # return builder.apply(alignment).apply(rotation).apply(flip).apply(distortion)
+    return builder.apply(distortion)
 
 
 def val_augmentation(batch: HomographyBatch) -> AugmentationBuilder:
@@ -389,7 +390,9 @@ def val_augmentation(batch: HomographyBatch) -> AugmentationBuilder:
         images=KC.rgb_to_grayscale(batch.images).repeat(1, 1, 3, 1, 1)
     )
 
-    return batch.build_augmentation()
+    builder = batch.build_augmentation()
+
+    return builder
 
 
 class CoinDataModule(LightningDataModule):

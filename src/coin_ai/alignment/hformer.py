@@ -122,24 +122,24 @@ class HFormer(nn.Module):
             ]
         )
 
-        self.final_norm = nn.LayerNorm(d_target)
+        self.final_norm = nn.LayerNorm(d_target, elementwise_affine=False, bias=False)
         self.xy_head = nn.Linear(d_target, 2, bias=False)
 
-        self.register_buffer(
-            "corners_a",
+        self.corners_a = nn.Buffer(self._create_corners())
+        self.deformation_scale = deformation_scale
+
+    def _create_corners(self) -> Tensor:
+        return (
             torch.tensor(
                 [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]], dtype=torch.float32
             ).reshape(1, 4, 2)
             * 0.5
-            + 0.25,
+            + 0.25
         )
-        self.deformation_scale = deformation_scale
 
     def forward_from_features(
         self, src_feat: Tensor, dst_feat: Tensor, image_shape: tuple[int, int]
     ) -> HCorrespondences:
-        b = src_feat.shape[0]
-
         q = self.query_init(src_feat)
 
         for i, block in enumerate(self.attn_blocks):
@@ -151,6 +151,13 @@ class HFormer(nn.Module):
             q = block(q, memory)
 
         offset = torch.tanh(self.xy_head(self.final_norm(q)))
+
+        return self._offset_to_correspondences(offset, image_shape)
+
+    def _offset_to_correspondences(
+        self, offset: Tensor, image_shape: tuple[int, int]
+    ) -> HCorrespondences:
+        b = offset.shape[0]
 
         corners_b = self.corners_a + self.deformation_scale * offset
 
@@ -204,6 +211,50 @@ class HFormer(nn.Module):
         )
 
         return (loss_ab + loss_ba) / 2
+
+
+class EmbedHFormer(HFormer):
+    def __init__(
+        self, n_layers: int = 3, d_target: int = 128, deformation_scale: float = 0.5
+    ):
+        super().__init__()
+
+        self.dino = DenseDino()
+        self.dino.requires_grad_(False)
+        d_memory = 384
+        self.n_heads = 8
+        self.query_init = QueryInit(d_memory=d_memory, d_target=d_target)
+        self.ab_embed = nn.Parameter(0.02 * torch.randn(1, 2, 1, d_memory))
+        self.attn_blocks = nn.ModuleList(
+            [
+                CrossAttentionBlock(
+                    d_memory=d_memory, d_target=d_target, n_heads=self.n_heads
+                )
+                for _ in range(n_layers)
+            ]
+        )
+
+        self.final_norm = nn.LayerNorm(d_target, elementwise_affine=False, bias=False)
+        self.xy_head = nn.Linear(d_target, 2, bias=False)
+
+        self.corners_a = nn.Buffer(self._create_corners())
+        self.deformation_scale = deformation_scale
+
+    def forward_from_features(
+        self, src_feat: Tensor, dst_feat: Tensor, image_shape: tuple[int, int]
+    ) -> HCorrespondences:
+        feat = torch.stack([src_feat, dst_feat], dim=1)
+        feat_emb = feat + self.ab_embed
+        memory = rearrange(feat_emb, "b t n c -> b (t n) c")
+
+        q = self.query_init(memory)
+
+        for block in self.attn_blocks:
+            q = block(q, memory)
+
+        offset = torch.tanh(self.xy_head(self.final_norm(q)))
+
+        return self._offset_to_correspondences(offset, image_shape)
 
 
 class MeanLearner(nn.Module):
